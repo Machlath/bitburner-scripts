@@ -4,12 +4,12 @@ import { formatMoney, formatNumberShort, instanceCount, getNsDataThroughFile, ge
 const updateInterval = 200; // We can improve our timing by updating more often than gang stats do (which is every 2 seconds for stats, every 20 seconds for territory)
 const wantedPenaltyThreshold = 0.0001; // Don't let the wanted penalty get worse than this
 const offStatCostPenalty = 50; // Equipment that doesn't contribute to our main stats suffers a percieved cost penalty of this multiple
-const defaultMaxSpendPerTickTransientEquipment = 0.5; // If the --equipment-budget is not specified, spend up to this percent of non-reserved cash on temporary upgrades (equipment)
-const defaultMaxSpendPerTickPermanentEquipment = 0.2; // If the --augmentation-budget is not specified, spend up to this percent of non-reserved cash on permanent member upgrades
+const defaultMaxSpendPerTickTransientEquipment = 0.02; // If the --equipment-budget is not specified, spend up to this percent of non-reserved cash on temporary upgrades (equipment)
+const defaultMaxSpendPerTickPermanentEquipment = 0.02; // If the --augmentation-budget is not specified, spend up to this percent of non-reserved cash on permanent member upgrades
 
 // Territory-related variables
 const gangsByPower = ["Speakers for the Dead", "The Dark Army", "The Syndicate", "Tetrads", "Slum Snakes", /* Hack gangs don't scale as far */ "The Black Hand", /* "NiteSec" Been there, not fun. */]
-const territoryEngageThreshold = 0.60; // Minimum average win chance (of gangs with territory) before we engage other clans
+const territoryEngageThreshold = 0.65; // Minimum average win chance (of gangs with territory) before we engage other clans
 let territoryTickDetected = false;
 let territoryTickTime = 20000; // Est. milliseconds until territory *ticks*. Can vary if processing offline time
 let territoryTickWaitPadding = 200; // Start waiting this many milliseconds before we think territory will tick, in case it ticks early (increases automatically after misfires)
@@ -42,10 +42,10 @@ let importantStats = [];
 
 let options;
 const argsSchema = [
-    ['training-percentage', 0.15], // Spend this percent of time randomly training gang members versus doing crime
+    ['training-percentage', 0.10], // Spend this percent of time randomly training gang members versus doing crime
     ['no-training', false], // Don't train unless all other tasks generate no gains
     ['no-auto-ascending', false], // Don't ascend members
-    ['ascend-multi-threshold', 2.50], // Ascend member #12 if a primary stat multi would increase by more than this amount
+    ['ascend-multi-threshold', 2.0], // Ascend member #12 if a primary stat multi would increase by more than this amount
     ['ascend-multi-threshold-spacing', 0.05], // Members will space their ascention multis by this amount to ensure they are ascending at different rates 
     // Note: given the above two defaults, members would ascend at multis [1.6, 1.55, 1.50, ..., 1.1, 1.05] once you have 12 members.
     ['min-training-ticks', 50], // Require this many ticks of training after ascending or recruiting to rebuild stats
