@@ -45,10 +45,10 @@ const argsSchema = [
     ['training-percentage', 0.20], // Spend this percent of time randomly training gang members versus doing crime
     ['no-training', false], // Don't train unless all other tasks generate no gains
     ['no-auto-ascending', false], // Don't ascend members
-    ['ascend-multi-threshold', 1.10], // Ascend member #12 if a primary stat multi would increase by more than this amount
+    ['ascend-multi-threshold', 1.2], // Ascend member #12 if a primary stat multi would increase by more than this amount
     ['ascend-multi-threshold-spacing', 0.05], // Members will space their acention multis by this amount to ensure they are ascending at different rates 
     // Note: given the above two defaults, members would ascend at multis [1.6, 1.55, 1.50, ..., 1.1, 1.05] once you have 12 members.
-    ['min-training-ticks', 20], // Require this many ticks of training after ascending or recruiting to rebuild stats
+    ['min-training-ticks', 30], // Require this many ticks of training after ascending or recruiting to rebuild stats
     ['reserve', null], // Reserve this much cash before determining spending budgets (defaults to contents of reserve.txt if not specified)
     ['augmentations-budget', null], // Percentage of non-reserved cash to spend per tick on permanent member upgrades (If not specified, uses defaultMaxSpendPerTickPermanentEquipment)
     ['equipment-budget', null], // Percentage of non-reserved cash to spend per tick on permanent member upgrades (If not specified, uses defaultMaxSpendPerTickTransientEquipment)
@@ -73,7 +73,10 @@ export async function main(ns) {
     log(ns, "Starting main loop...");
     while (true) {
         try { await mainLoop(ns); }
-        catch (err) { log(ns, `ERROR: Caught an unhandled error in the main loop: ${String(err)}`, 'error', true); }
+        catch (err) {
+            log(ns, `WARNING: gangs.js Caught (and suppressed) an unexpected error in the main loop:\n` +
+                (typeof err === 'string' ? err : err.message || JSON.stringify(err)), false, 'warning');
+        }
         await ns.sleep(updateInterval);
     }
 }
@@ -86,12 +89,18 @@ async function initialize(ns) {
     pctTraining = options['no-training'] ? 0 : options['training-percentage'];
 
     let loggedWaiting = false;
-    while (!(await getNsDataThroughFile(ns, 'ns.gang.inGang()', '/Temp/player-gang-joined.txt'))) {
-        if (!loggedWaiting) {
-            log(ns, `Waiting to be in a gang. Will create the highest faction gang as soon as it is available...`);
-            loggedWaiting = true;
+    while (!(await getNsDataThroughFile(ns, 'ns.gang.inGang()', '/Temp/gang-inGang.txt'))) {
+        try {
+            if (!loggedWaiting) {
+                log(ns, `Waiting to be in a gang. Will create the highest faction gang as soon as it is available...`);
+                loggedWaiting = true;
+            }
+            await runCommand(ns, `${JSON.stringify(gangsByPower)}.forEach(g => ns.gang.createGang(g))`, '/Temp/gang-createGang.js');
         }
-        await runCommand(ns, `${JSON.stringify(gangsByPower)}.forEach(g => ns.gang.createGang(g))`, '/Temp/gang-createGang.js');
+        catch (err) {
+            log(ns, `WARNING: gangs.js Caught (and suppressed) an unexpected error while waiting to join a gang:\n` +
+                (typeof err === 'string' ? err : err.message || JSON.stringify(err)), false, 'warning');
+        }
         await ns.sleep(1000); // Wait for our human to join a gang
     }
     const playerData = await getNsDataThroughFile(ns, 'ns.getPlayer()', '/Temp/player-info.txt');
