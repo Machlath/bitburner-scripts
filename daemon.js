@@ -1,6 +1,6 @@
 import {
     formatMoney, formatRam, formatDuration, formatDateTime, formatNumber,
-    scanAllServers, hashCode, disableLogs, log, getFilePath,
+    scanAllServers, hashCode, disableLogs, log, getFilePath, getConfiguration,
     getNsDataThroughFile_Custom, runCommand_Custom, waitForProcessToComplete_Custom,
     tryGetBitNodeMultipliers_Custom, getActiveSourceFiles_Custom,
     getFnRunViaNsExec, getFnIsAliveViaNsPs, autoRetry
@@ -92,6 +92,7 @@ let highUtilizationIterations = 0;
 let lastShareTime = 0; // Tracks when share was last invoked so we can respect the configured share-cooldown
 let allTargetsPrepped = false;
 
+/** @returns {Player} */
 async function updatePlayerStats() { return playerStats = await getNsDataThroughFile(_ns, `ns.getPlayer()`, '/Temp/player-info.txt'); }
 
 function playerHackSkill() { return playerStats.hacking; }
@@ -144,23 +145,24 @@ const argsSchema = [
     ['queue-delay', 1000], // Delay before the first script begins, to give time for all scripts to be scheduled
     ['max-batches', 40], // Maximum overlapping cycles to schedule in advance. Note that once scheduled, we must wait for all batches to complete before we can schedule more
     ['i', false], // Farm intelligence with manual hack.
-    ['reserved-ram', 32],
+    ['reserved-ram', 32], // Keep this much home RAM free when scheduling hack/grow/weaken cycles on home.
     ['looping-mode', false], // Set to true to attempt to schedule perpetually-looping tasks.
-    ['recovery-thread-padding', 1],
+    ['recovery-thread-padding', 1], // Multiply the number of grow/weaken threads needed by this amount to automatically recover more quickly from misfires.
     ['share', false], // Enable sharing free ram to increase faction rep gain (enabled automatically once RAM is sufficient)
     ['no-share', false], // Disable sharing free ram to increase faction rep gain
     ['share-cooldown', 5000], // Wait before attempting to schedule more share threads (e.g. to free RAM to be freed for hack batch scheduling first)
-    ['share-max-utilization', 1], // Set to 1 if you don't care to leave any RAM free after sharing. Will use up to this much of the available RAM
+    ['share-max-utilization', 0.8], // Set to 1 if you don't care to leave any RAM free after sharing. Will use up to this much of the available RAM
     ['no-tail-windows', false], // Set to true to prevent the default behaviour of opening a tail window for certain launched scripts. (Doesn't affect scripts that open their own tail windows)
     ['initial-study-time', 10], // Seconds. Set to 0 to not do any studying at startup. By default, if early in an augmentation, will start with a little study to boost hack XP
     ['initial-hack-xp-time', 10], // Seconds. Set to 0 to not do any hack-xp grinding at startup. By default, if early in an augmentation, will start with a little study to boost hack XP
     ['disable-script', []], // The names of scripts that you do not want run by our scheduler
+    ['run-script', []], // The names of additional scripts that you want daemon to run on home
 ];
 
 export function autocomplete(data, args) {
     data.flags(argsSchema);
     const lastFlag = args.length > 1 ? args[args.length - 2] : null;
-    if (lastFlag == "--disable-script")
+    if (lastFlag == "--disable-script" || lastFlag == "--run-script")
         return data.scripts;
     return [];
 }
@@ -169,14 +171,16 @@ export function autocomplete(data, args) {
 /** @param {NS} ns **/
 export async function main(ns) {
     daemonHost = "home"; // ns.getHostname(); // get the name of this node (realistically, will always be home)
+    const runOptions = getConfiguration(ns, argsSchema);
+    if (!runOptions) return;
 
     // Ensure no other copies of this script are running (they share memory)
     const scriptName = ns.getScriptName();
     const competingDaemons = ns.ps("home").filter(s => s.filename == scriptName && JSON.stringify(s.args) != JSON.stringify(ns.args));
     if (competingDaemons.length > 0) {
-        const strDaemonPids = JSON.stringify(competingDaemons.map(p => p.pid));
-        log(ns, `WARN: Detected ${competingDaemons.length} other '${scriptName}' instance is running at home (pids: ${strDaemonPids}) - shutting it down...`, true, 'warning')
-        const killPid = await runCommand(ns, `${strDaemonPids}.forEach(ns.kill)`, '/Temp/kill-daemons.js');
+        const daemonPids = competingDaemons.map(p => p.pid);
+        log(ns, `WARN: Detected ${competingDaemons.length} other '${scriptName}' instance is running at home (pids: ${daemonPids}) - shutting it down...`, true, 'warning')
+        const killPid = await killProcessIds(ns, daemonPids);
         await waitForProcessToComplete_Custom(ns, getFnIsAliveViaNsPs(ns), killPid);
     }
 
@@ -200,8 +204,8 @@ export async function main(ns) {
     dictSourceFiles = await getActiveSourceFiles_Custom(ns, getNsDataThroughFile);
     log(ns, "The following source files are active: " + JSON.stringify(dictSourceFiles));
 
-    // Process command line args (if any)
-    options = ns.flags(argsSchema);
+    // Process configuration
+    options = runOptions;
     hackOnly = options.h || options['hack-only'];
     xpOnly = options.x || options['xp-only'];
     stockMode = options.s || options['stock-manipulation'] || options['stock-manipulation-focus'];
@@ -245,9 +249,11 @@ export async function main(ns) {
             name: "work-for-factions.js", args: ['--fast-crimes-only', '--no-coding-contracts'],  // Singularity script to manage how we use our "focus" work.
             shouldRun: () => 4 in dictSourceFiles && (ns.getServerMaxRam("home") >= 128 / (2 ** dictSourceFiles[4])) // Higher SF4 levels result in lower RAM requirements
         },
-        { name: "bladeburner.js", tail: openTailWindows, shouldRun: () => 7 in dictSourceFiles && playerStats.bitNodeN != 8 }, // Script to create manage bladeburner for us
+        { name: "bladeburner.js", tail: openTailWindows, shouldRun: () => 7 in dictSourceFiles && playerStats.bitNodeN == 6 || playerStats.bitNodeN == 7 }, // Script to create manage bladeburner for us
     ];
     asynchronousHelpers.forEach(helper => helper.name = getFilePath(helper.name));
+    // Add any additional scripts to be run provided by --run-script arguments
+    options['run-script'].forEach(s => asynchronousHelpers.push({ name: s }));
     asynchronousHelpers.forEach(helper => helper.isLaunched = false);
     asynchronousHelpers.forEach(helper => helper.requiredServer = "home"); // All helpers should be launched at home since they use tempory scripts, and we only reserve ram on home
     // These scripts are spawned periodically (at some interval) to do their checks, with an optional condition that limits when they should be spawned
@@ -266,7 +272,7 @@ export async function main(ns) {
         // Buy upgrades regardless of payoff if they cost less than 0.1% of our money
         { interval: 29000, name: "hacknet-upgrade-manager.js", shouldRun: shouldUpgradeHacknet, args: () => ["-c", "--max-payoff-time", "1E100h", "--max-spend", ns.getServerMoneyAvailable("home") * 0.001] },
         {
-            interval: 30000, name: "/Tasks/ram-manager.js", args: () => ['--budget', '0.5', '--reserve', reservedMoney(ns)], // Spend about 50% of un-reserved cash on home RAM upgrades (permanent) when they become available
+            interval: 30000, name: "/Tasks/ram-manager.js", args: () => ['--budget', 0.5, '--reserve', reservedMoney(ns)], // Spend about 50% of un-reserved cash on home RAM upgrades (permanent) when they become available
             shouldRun: () => 4 in dictSourceFiles && shouldImproveHacking() // Only trigger if hack income is important
         },
         {   // Periodically check for new faction invites and join if deemed useful to be in that faction. Also determines how many augs we could afford if we installed right now
@@ -335,7 +341,7 @@ async function kickstartHackXp(ns) {
                     log(ns, `INFO: Cannot study, because you are in city ${playerStats.city} which has no known university, and you cannot afford to travel to another city.`);
                 else {
                     const course = playerStats.city == "Sector-12" ? "Study Computer Science" : "Algorithms"; // Assume if we are still in Sector-12 we are poor and should only take the free course
-                    await getNsDataThroughFile(ns, `ns.universityCourse('${university}', '${course}', false)`, '/Temp/study-for-hack-xp.txt');
+                    await getNsDataThroughFile(ns, `ns.universityCourse(ns.args[0], ns.args[1], ns.args[2])`, '/Temp/study.txt', [university, course, false]);
                     startedStudying = true;
                     await ns.asleep(studyTime * 1000); // Wait for studies to affect Hack XP. This will often greatly reduce time-to-hack/grow/weaken, and avoid a slow first cycle
                 }
@@ -1312,7 +1318,8 @@ export async function arbitraryExecution(ns, tool, threads, args, preferredServe
                 missing_scripts.push(getFilePath('helpers.js')); // Some tools require helpers.js. Best to copy it around.
             if (verbose)
                 log(ns, `Copying ${tool.name} from ${daemonHost} to ${targetServer.name} so that it can be executed remotely.`);
-            await getNsDataThroughFile(ns, `await ns.scp(${JSON.stringify(missing_scripts)}, '${daemonHost}', '${targetServer.name}')`, '/Temp/copy-scripts.txt')
+            await getNsDataThroughFile(ns, `await ns.scp(ns.args.slice(2), ns.args[0], ns.args[1])`,
+                '/Temp/copy-scripts.txt', [daemonHost, targetServer.name, ...missing_scripts])
             await ns.asleep(5); // Workaround for Bitburner bug https://github.com/danielyxie/bitburner/issues/1714 - newly created/copied files sometimes need a bit more time, even if awaited
             just_copied = true;
         }
@@ -1596,6 +1603,7 @@ async function updateStockPositions(ns) {
     shouldManipulateHack = newShouldManipulateHack;
     serversWithOwnedStock = newServersWithOwnedStock;
 }
+
 // Kills all scripts running the specified tool and targeting one of the specified servers if stock market manipulation is enabled
 async function terminateScriptsManipulatingStock(ns, servers, toolName) {
     const problematicProcesses = addedServerNames.flatMap(hostname => ps(ns, hostname)
@@ -1603,8 +1611,14 @@ async function terminateScriptsManipulatingStock(ns, servers, toolName) {
         .map(process => process.pid));
     if (problematicProcesses.length > 0) {
         log(ns, `INFO: Killing ${problematicProcesses.length} pids running ${toolName} with stock manipulation in the wrong direction.`);
-        await runCommand(ns, 'ns.args.forEach(p => ns.kill(p))', '/Temp/kill-all-pids.js', problematicProcesses);
+        await killProcessIds(ns, problematicProcesses);
     }
+}
+
+/** Helper to kill a list of process ids
+ * @param {NS} ns **/
+async function killProcessIds(ns, processIds) {
+    return await runCommand(ns, `ns.args.forEach(ns.kill)`, '/Temp/kill-pids.js', processIds);
 }
 
 function addServer(server, verbose) {
@@ -1635,7 +1649,7 @@ function removeServerByName(ns, deletedHostName) {
 let getServerByName = hostname => serverListByFreeRam.find(s => s.name == hostname);
 
 // Indication that a server has been flagged for deletion (by the host manager). Doesn't count for home of course, as this is where the flag file is stored for copying.
-let isFlaggedForDeletion = (hostName) => hostName != "home" && doesFileExist("/Flags/deleting.txt", hostName);
+let isFlaggedForDeletion = (hostName) => hostName != "home" && doesFileExist(getFilePath("/Flags/deleting.txt"), hostName);
 
 // Helper to construct our server lists from a list of all host names
 function buildServerList(ns, verbose = false) {
