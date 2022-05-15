@@ -8,6 +8,8 @@ const argsSchema = [
     ['bypass-stanek-warning', false], // If set to true, and this will bypass the warning before purchasing augmentations if you haven't gotten stanek yet.
     // Spawn this script after installing augmentations (Note: Args not supported by the game)
     ['on-reset-script', null], // By default, will start with `stanek.js` if you have stanek's gift, otherwise `daemon.js`.
+    ['ticks-to-wait-for-additional-purchases', 10], // Don't reset until we've gone this many game ticks without any new purchases being made (10 * 200ms (game tick time) ~= 2 seconds)
+    ['max-wait-time', 60000], // The maximum number of milliseconds we'll wait for external scripts to purchase whatever permanent upgrades they can before we ascend anyway.
 ];
 
 export function autocomplete(data, args) {
@@ -26,6 +28,7 @@ export async function main(ns) {
     let dictSourceFiles = await getActiveSourceFiles(ns); // Find out what source files the user has unlocked
     if (!(4 in dictSourceFiles))
         return log(ns, "ERROR: You cannot automate installing augmentations until you have unlocked singularity access (SF4).", true, 'error');
+    ns.disableLog('sleep');
 
     // TODO: Additional sanity checks: Make sure it's a good time to reset
     // - We should be able to install ~10 augs or so after maxing home ram purchases?
@@ -70,7 +73,7 @@ export async function main(ns) {
 
     // TODO: (SF13) If Stanek is unlocked, and we have not yet accepted Stanek's gift, now's our last chance to do it (before purchasing augs)
 
-    // STEP 3: Buy as many augmentations as possible
+    // STEP 3: Buy as many desired augmentations as possible
     log(ns, 'Purchasing augmentations...', true, 'info');
     const facmanArgs = ['--purchase', '-v'];
     if (options['bypass-stanek-warning']) {
@@ -102,7 +105,7 @@ export async function main(ns) {
     // STEP 5: (SF10) Buy whatever sleeve upgrades we can afford
     if (10 in dictSourceFiles) {
         log(ns, 'Try Upgrade Sleeves...', true, 'info');
-        ns.run(getFilePath('sleeve.js'), 1, '--reserve', '0', '--aug-budget', '1', '--min-aug-batch', '1', '--buy-cooldown', '0');
+        ns.run(getFilePath('sleeve.js'), 1, '--reserve', '0', '--aug-budget', '1', '--min-aug-batch', '1', '--buy-cooldown', '0', '--disable-training');
         await ns.sleep(500); // Give it time to make its initial purchases. Note that we do not block on the process shutting down - it will keep running.
     }
 
@@ -131,7 +134,8 @@ export async function main(ns) {
     // WAIT: For money to stop decreasing, so we know that external scripts have bought what they could.
     log(ns, 'Waiting for purchasing to stop...', true, 'info');
     let money = 0, lastMoney = 0, ticksWithoutPurchases = 0;
-    while (ticksWithoutPurchases < 10) { // 10 * 200ms (game tick time) ~= 2 seconds
+    const maxWait = Date.now() + options['max-wait-time'];
+    while (ticksWithoutPurchases < options['ticks-to-wait-for-additional-purchases'] && (Date.now() < maxWait)) {
         const start = Date.now(); // Used to wait for the game to tick.
         const refreshMoney = async () => money =
             await getNsDataThroughFile(ns, `ns.getServerMoneyAvailable(ns.args[0])`, `/Temp/getServerMoneyAvailable.txt`, ["home"]);
@@ -140,6 +144,12 @@ export async function main(ns) {
         ticksWithoutPurchases = money < lastMoney ? 0 : ticksWithoutPurchases + 1;
         lastMoney = money;
     }
+
+    // STEP 3 REDUX: If somehow we have money left over and can afford some junk augs that weren't on our desired list, grab them too
+    log(ns, 'Seeing if we can afford any other augmentations...', true, 'info');
+    facmanArgs.push('--stat-desired', '_'); // Means buy any aug with any stats
+    pid = ns.run(getFilePath('faction-manager.js'), 1, ...facmanArgs);
+    await waitForProcessToComplete(ns, pid, true); // Wait for the script to shut down, indicating it is done.
 
     // Clean up our temp folder - it's good to do this once in a while to reduce the save footprint.
     await waitForProcessToComplete(ns, ns.run(getFilePath('cleanup.js')), true);
