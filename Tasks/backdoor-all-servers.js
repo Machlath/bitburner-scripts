@@ -41,7 +41,7 @@ export let main = async ns => {
             for (let hop of routes[server])
                 ns.connect(hop);
             if (server === "w0r1d_d43m0n") {
-                ns.alert("Ready to hack w0r1d_d43m0n!");
+                ns.alert("Ready to backdoor w0r1d_d43m0n!");
                 while (true) await ns.sleep(10000); // Sleep forever so the script isn't run multiple times to create multiple overlapping alerts
             }
             ns.print(`Installing backdoor on "${server}"...`);
