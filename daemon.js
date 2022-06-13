@@ -35,7 +35,7 @@ const argsSchema = [
     ['spend-hashes-for-money-when-under', 10E6], // (Default 10m) Convert 4 hashes to money whenever we're below this amount
     ['disable-spend-hashes', true], // An easy way to set the above to a very large negative number, thus never spending hashes for Money
     ['silent-misfires', true], // Instruct remote scripts not to alert when they misfire
-    ['initial-max-targets', 5], // Initial number of servers to target / prep (TODO: Scale this as BN progression increases)
+    ['initial-max-targets', 2], // Initial number of servers to target / prep (TODO: Scale this as BN progression increases)
     ['max-steal-percentage', 0.75], // Don't steal more than this in case something goes wrong with timing or scheduling, it's hard to recover from
     ['cycle-timing-delay', 16000], // Time
     ['queue-delay', 1000], // Delay before the first script begins, to give time for all scripts to be scheduled
@@ -47,7 +47,7 @@ const argsSchema = [
     ['share', false], // Enable sharing free ram to increase faction rep gain (enabled automatically once RAM is sufficient)
     ['no-share', true], // Disable sharing free ram to increase faction rep gain
     ['share-cooldown', 5000], // Wait before attempting to schedule more share threads (e.g. to free RAM to be freed for hack batch scheduling first)
-    ['share-max-utilization', 0.8], // Set to 1 if you don't care to leave any RAM free after sharing. Will use up to this much of the available RAM
+    ['share-max-utilization', 0.9], // Set to 1 if you don't care to leave any RAM free after sharing. Will use up to this much of the available RAM
     ['no-tail-windows', true], // Set to true to prevent the default behaviour of opening a tail window for certain launched scripts. (Doesn't affect scripts that open their own tail windows)
     ['initial-study-time', 0], // Seconds. Set to 0 to not do any studying at startup. By default, if early in an augmentation, will start with a little study to boost hack XP
     ['initial-hack-xp-time', 0], // Seconds. Set to 0 to not do any hack-xp grinding at startup. By default, if early in an augmentation, will start with a little study to boost hack XP
@@ -276,7 +276,12 @@ export async function main(ns) {
     periodicScripts = [
         // Buy tor as soon as we can if we haven't already, and all the port crackers (exception: don't buy 2 most expensive port crackers until later if in a no-hack BN)
         { interval: 25000, name: "/Tasks/tor-manager.js", shouldRun: () => 4 in dictSourceFiles && !allHostNames.includes("darkweb") },
-        { interval: 26000, name: "/Tasks/program-manager.js", shouldRun: () => 4 in dictSourceFiles && getNumPortCrackers(ns) != 5 && (getNumPortCrackers(ns) < 3 || shouldImproveHacking()) },
+        {
+            interval: 26000, name: "/Tasks/program-manager.js",
+            shouldRun: () => 4 in dictSourceFiles && getNumPortCrackers(ns) != 5 &&
+                // In BNs without hack income, we will buy the first 3 (cheap) port crackers, and delay the others until we have a lot of money or TRP
+                (getNumPortCrackers(ns) < 3 || shouldImproveHacking() || allHostNames.includes("w0r1d_d43m0n"))
+        },
         { interval: 27000, name: "/Tasks/contractor.js", requiredServer: "home" }, // Periodically look for coding contracts that need solving
         // Buy every hacknet upgrade with up to 4h payoff if it is less than 10% of our current money or 8h if it is less than 1% of our current money.
         { interval: 28000, name: "hacknet-upgrade-manager.js", shouldRun: shouldUpgradeHacknet, args: () => ["-c", "--max-payoff-time", "4h", "--max-spend", ns.getServerMoneyAvailable("home") * 0.1] },
