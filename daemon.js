@@ -32,7 +32,7 @@ const argsSchema = [
     ['xp-only', false], // Same as above
     ['n', false], // Can toggle on using hacknet nodes for extra hacking ram (at the expense of hash production)
     ['use-hacknet-nodes', false], // Same as above
-    ['spend-hashes-for-money-when-under', 10E6], // (Default 10m) Convert 4 hashes to money whenever we're below this amount
+    ['spend-hashes-for-money-when-under', 10E12], // (Default 10m) Convert 4 hashes to money whenever we're below this amount
     ['disable-spend-hashes', true], // An easy way to set the above to a very large negative number, thus never spending hashes for Money
     ['silent-misfires', true], // Instruct remote scripts not to alert when they misfire
     ['initial-max-targets', 2], // Initial number of servers to target / prep (TODO: Scale this as BN progression increases)
@@ -45,13 +45,13 @@ const argsSchema = [
     ['looping-mode', false], // Set to true to attempt to schedule perpetually-looping tasks.
     ['recovery-thread-padding', 1], // Multiply the number of grow/weaken threads needed by this amount to automatically recover more quickly from misfires.
     ['share', false], // Enable sharing free ram to increase faction rep gain (enabled automatically once RAM is sufficient)
-    ['no-share', true], // Disable sharing free ram to increase faction rep gain
+    ['no-share', false], // Disable sharing free ram to increase faction rep gain
     ['share-cooldown', 5000], // Wait before attempting to schedule more share threads (e.g. to free RAM to be freed for hack batch scheduling first)
     ['share-max-utilization', 0.9], // Set to 1 if you don't care to leave any RAM free after sharing. Will use up to this much of the available RAM
     ['no-tail-windows', true], // Set to true to prevent the default behaviour of opening a tail window for certain launched scripts. (Doesn't affect scripts that open their own tail windows)
     ['initial-study-time', 0], // Seconds. Set to 0 to not do any studying at startup. By default, if early in an augmentation, will start with a little study to boost hack XP
     ['initial-hack-xp-time', 0], // Seconds. Set to 0 to not do any hack-xp grinding at startup. By default, if early in an augmentation, will start with a little study to boost hack XP
-    ['disable-script', ["work-for-factions.js", "stockmaster.js", "gangs.js", "hacknet-upgrade-manager.js"]], // The names of scripts that you do not want run by our scheduler
+    ['disable-script', ["work-for-factions.js", "stockmaster.js", "gangs.js", "bladeburner.js", "spend-hacknet-hashes.js", "hacknet-upgrade-manager.js", "sleeve.js"]], // The names of scripts that you do not want run by our scheduler
     ['run-script', []], // The names of additional scripts that you want daemon to run on home
 ];
 
@@ -276,12 +276,7 @@ export async function main(ns) {
     periodicScripts = [
         // Buy tor as soon as we can if we haven't already, and all the port crackers (exception: don't buy 2 most expensive port crackers until later if in a no-hack BN)
         { interval: 25000, name: "/Tasks/tor-manager.js", shouldRun: () => 4 in dictSourceFiles && !allHostNames.includes("darkweb") },
-        {
-            interval: 26000, name: "/Tasks/program-manager.js",
-            shouldRun: () => 4 in dictSourceFiles && getNumPortCrackers(ns) != 5 &&
-                // In BNs without hack income, we will buy the first 3 (cheap) port crackers, and delay the others until we have a lot of money or TRP
-                (getNumPortCrackers(ns) < 3 || shouldImproveHacking() || allHostNames.includes("w0r1d_d43m0n"))
-        },
+        { interval: 26000, name: "/Tasks/program-manager.js", shouldRun: () => 4 in dictSourceFiles && getNumPortCrackers(ns) != 5 },
         { interval: 27000, name: "/Tasks/contractor.js", requiredServer: "home" }, // Periodically look for coding contracts that need solving
         // Buy every hacknet upgrade with up to 4h payoff if it is less than 10% of our current money or 8h if it is less than 1% of our current money.
         { interval: 28000, name: "hacknet-upgrade-manager.js", shouldRun: shouldUpgradeHacknet, args: () => ["-c", "--max-payoff-time", "4h", "--max-spend", ns.getServerMoneyAvailable("home") * 0.1] },
@@ -493,7 +488,10 @@ let dictScriptsRun = {}; // Keep a cache of every script run on every host, and 
  * Workaround a current bitburner bug by yeilding briefly to the game after executing something. **/
 async function exec(ns, script, host, numThreads, ...args) {
     // Try to run the script with auto-retry if it fails to start
-    // TODO: It probably doesn't make sense to auto-retry H/G/W attempts, only attempt to run other scripts
+    // It doesn't make sense to auto-retry hack tools, only add error handling to other scripts
+    if (hackTools.some(h => h.name === script))
+        return ns.exec(script, host, numThreads, ...args);
+    // Otherwise, run with auto-retry to handle e.g. temporary ram issues
     const pid = await autoRetry(ns, async () => {
         const p = ns.exec(script, host, numThreads, ...args)
         return p;
@@ -753,7 +751,8 @@ async function doTargetingLoop(ns) {
             const expectedDeletedHostPhrase = "Invalid hostname: ";
             let expectedErrorPhraseIndex = errorMessage.indexOf(expectedDeletedHostPhrase);
             if (expectedErrorPhraseIndex == -1) {
-                log(ns, `WARNING: daemon.js Caught an error in the targeting loop: ${err?.stack || errorMessage}`, true, 'warning');
+                if (err?.stack) errorMessage += '\n' + err.stack;
+                log(ns, `WARNING: daemon.js Caught an error in the targeting loop: ${errorMessage}`, true, 'warning');
                 continue;
             }
             let start = expectedErrorPhraseIndex + expectedDeletedHostPhrase.length;
