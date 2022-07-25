@@ -4,9 +4,9 @@ import {
 } from './helpers.js'
 
 // Default sripts called at startup and shutdown of stanek
-const defaultStartupScript = getFilePath('daemon.js');
-const defaultStartupArgs = ['--reserved-ram', 1E100];
-const defaultCompletionScript = getFilePath('daemon.js');
+const defaultStartupScript = getFilePath(0);
+const defaultStartupArgs = [0];
+const defaultCompletionScript = getFilePath(0);
 const defaultCompletionArgs = [];
 // Name of the external script that will be created and called to generate charges
 const chargeScript = "/Temp/stanek.js.charge.js";
@@ -16,7 +16,7 @@ const serenityRep = 100E6;
 const argsSchema = [
     ['reserved-ram', 32], // Don't use this RAM
     ['reserved-ram-ideal', 64], // Leave this amount of RAM free if it represents less than 5% of available RAM
-    ['max-charges', 120], // Stop charging when all fragments have this many charges (diminishing returns - num charges is ^0.07 )
+    ['max-charges', 150], // Stop charging when all fragments have this many charges (diminishing returns - num charges is ^0.07 )
     // By default, starting an augmentation with stanek.js will still spawn daemon.js, but will instruct it not to schedule any hack cycles against home by 'reserving' all its RAM
     // TODO: Set these defaults in some way that the user can explicitly specify that they want to run **no** startup script and **no** completion script
     ['on-startup-script', null], // (Defaults in code) Spawn this script when stanek is launched WARNING: This argument may go away in the future since autopilot.js will orchestrate stanek
