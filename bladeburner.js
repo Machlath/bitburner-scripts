@@ -8,14 +8,14 @@ const simulacrumAugName = "The Blade's Simulacrum"; // This augmentation lets yo
 // we use the following configuration to change their relative cost. Higher number means lower priority
 // Note: Ideally we could emphasize Tracer "early-game" and Digital Observer "late-game", but this is too much of a pain to solve for
 const costAdjustments = {
-    "Overclock": 0.8, // Speed up contracts/operations. More important now that sleeves remove the operation count bottleneck
+    "Overclock": 0.5, // Speed up contracts/operations. More important now that sleeves remove the operation count bottleneck
     "Reaper": 1.2, // Combat boost. Early effect is paltry (because stats are so low), will get plenty of points late game
     "Evasive Systems": 1.2, // Dex/Agi boost. Mildly deprioritized for same reasoning as above.
-    "Cloak": 1.5, // Cheap, and stealth ends up with plenty of boost, so we don't need to invest in Cloak as much.
+    "Cloak": 5, // Cheap, and stealth ends up with plenty of boost, so we don't need to invest in Cloak as much.
     "Hyperdrive": 2, // Improves stats gained, but not Rank gained. Less useful if training outside of BB
-    "Tracer": 2, // Only boosts Contract success chance, which are relatively easy to begin with. 
-    "Cyber's Edge": 5, // Boosts stamina, but contract counts are much more limiting than stamina, so isn't really needed
-    "Hands of Midas": 10 // Improves money gain. It is assumed that Bladeburner will *not* be a main source of income
+    "Tracer": 9999999999, // Only boosts Contract success chance, which are relatively easy to begin with. 
+    "Cyber's Edge": 8, // Boosts stamina, but contract counts are much more limiting than stamina, so isn't really needed
+    "Hands of Midas": 9999999999 // Improves money gain. It is assumed that Bladeburner will *not* be a main source of income
 };
 
 // Some bladeburner info gathered at startup and cached
@@ -25,19 +25,19 @@ let player, ownedSourceFiles;
 let options;
 const argsSchema = [
     ['success-threshold', 0.99], // Attempt the best action whose minimum chance of success exceeds this threshold
-    ['chaos-recovery-threshold', 50], // Prefer to do "Stealth Retirement" operations to reduce chaos when it reaches this number
-    ['max-chaos', 100], // If chaos exceeds this amount in every city, we will reluctantly resort to diplomacy to reduce it.
+    ['chaos-recovery-threshold', 100], // Prefer to do "Stealth Retirement" operations to reduce chaos when it reaches this number
+    ['max-chaos', 1000], // If chaos exceeds this amount in every city, we will reluctantly resort to diplomacy to reduce it.
     ['toast-upgrades', false], // Set to true to toast each time a skill is upgraded
     ['toast-operations', false], // Set to true to toast each time we switch operations
     ['toast-relocations', false], // Set to true to toast each time we change cities
-    ['low-stamina-pct', 0.5], // Switch to no-stamina actions when we drop below this stamina percent
+    ['low-stamina-pct', 0.4], // Switch to no-stamina actions when we drop below this stamina percent
     ['high-stamina-pct', 0.6], // Switch back to stamina-consuming actions when we rise above this stamina percent
-    ['training-limit', 50], // Don't bother training more than this many times, since Training is slow and earns no rank
+    ['training-limit', 5], // Don't bother training more than this many times, since Training is slow and earns no rank
     ['update-interval', 2000], // How often to refresh bladeburner status
     ['ignore-busy-status', false], // If set to true, we will attempt to do bladeburner tasks even if we are currently busy and don't have The Blade's Simulacrum
     ['allow-raiding-highest-pop-city', false], // Set to true, we will allow Raid to be used even in our highest-population city (disabled by default)
-    ['reserved-action-count', 200], // Some operation types are "reserved" for chaos reduction / population estimate increase. Start by reserving this many, reduced automatically as we approach maxRankNeeded
-    ['disable-spending-hashes', false], // Set to true to not spawn spend-hacknet-hashes.js to spend hashes on bladeburner
+    ['reserved-action-count', 100], // Some operation types are "reserved" for chaos reduction / population estimate increase. Start by reserving this many, reduced automatically as we approach maxRankNeeded
+    ['disable-spending-hashes', true], // Set to true to not spawn spend-hacknet-hashes.js to spend hashes on bladeburner
 ];
 export function autocomplete(data, _) {
     data.flags(argsSchema);
