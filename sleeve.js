@@ -1,6 +1,6 @@
 import { log, getConfiguration, instanceCount, disableLogs, getActiveSourceFiles, getNsDataThroughFile, runCommand, formatMoney, formatDuration } from './helpers.js'
 
-const interval = 5000; // Uodate (tick) this often
+const interval = 2000; // Uodate (tick) this often
 const minTaskWorkTime = 29000; // Sleeves assigned a new task should stick to it for at least this many milliseconds
 const trainingReserveFile = '/Temp/sleeves-training-reserve.txt';
 const works = ['security', 'field', 'hacking']; // When doing faction work, we prioritize physical work since sleeves tend towards having those stats be highest
@@ -15,19 +15,19 @@ const argsSchema = [
     ['min-shock-recovery', 97], // Minimum shock recovery before attempting to train or do crime (Set to 100 to disable, 0 to recover fully)
     ['shock-recovery', 0.05], // Set to a number between 0 and 1 to devote that ratio of time to periodic shock recovery (until shock is at 0)
     ['crime', null], // If specified, sleeves will perform only this crime regardless of stats
-    ['homicide-chance-threshold', 0.45], // Sleeves will automatically start homicide once their chance of success exceeds this ratio
+    ['homicide-chance-threshold', 0.5], // Sleeves will automatically start homicide once their chance of success exceeds this ratio
     ['aug-budget', 0.1], // Spend up to this much of current cash on augs per tick (Default is high, because these are permanent for the rest of the BN)
     ['buy-cooldown', 60 * 1000], // Must wait this may milliseconds before buying more augs for a sleeve
-    ['min-aug-batch', 20], // Must be able to afford at least this many augs before we pull the trigger (or fewer if buying all remaining augs)
+    ['min-aug-batch', 10], // Must be able to afford at least this many augs before we pull the trigger (or fewer if buying all remaining augs)
     ['reserve', null], // Reserve this much cash before determining spending budgets (defaults to contents of reserve.txt if not specified)
     ['disable-follow-player', false], // Set to true to disable having Sleeve 0 work for the same faction/company as the player to boost re
     ['disable-training', false], // Set to true to disable having sleeves workout at the gym (costs money)
     ['train-to-strength', 105], // Sleeves will go to the gym until they reach this much Str
     ['train-to-defense', 105], // Sleeves will go to the gym until they reach this much Def
-    ['train-to-dexterity', 70], // Sleeves will go to the gym until they reach this much Dex
-    ['train-to-agility', 70], // Sleeves will go to the gym until they reach this much Agi
+    ['train-to-dexterity', 75], // Sleeves will go to the gym until they reach this much Dex
+    ['train-to-agility', 75], // Sleeves will go to the gym until they reach this much Agi
     ['training-reserve', null], // Defaults to global reserve.txt. Can be set to a negative number to allow debt. Sleeves will not train if money is below this amount.
-    ['disable-spending-hashes-for-gym-upgrades', false], // Set to true to disable spending hashes on gym upgrades when training up sleeves.
+    ['disable-spending-hashes-for-gym-upgrades', true], // Set to true to disable spending hashes on gym upgrades when training up sleeves.
 ];
 
 export function autocomplete(data, _) {
@@ -197,7 +197,7 @@ async function pickSleeveTask(ns, playerInfo, i, sleeve, canTrain) {
     // If the player is in bladeburner, and has already unlocked gangs with Karma, generate contracts and operations
     if (playerInfo.inBladeburner && playerInGang) {
         // Hack: Without paying much attention to what's happening in bladeburner, pre-assign a variety of tasks by sleeve index
-        const bbTasks = [/*0*/["Support main sleeve"], /*1*/["Take on contracts", "Retirement"],
+        const bbTasks = [/*1*/["Take on contracts", "Retirement"],
             /*2*/["Take on contracts", "Bounty Hunter"], /*3*/["Take on contracts", "Tracking"], /*4*/["Infiltrate synthoids"],
             /*5*/["Diplomacy"], /*6*/["Field Analysis"], /*7*/["Recruitment"]];
         let [action, contractName] = bladeburnerCityChaos > 50 ? ["Diplomacy"] : bbTasks[i];
